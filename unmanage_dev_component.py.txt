@@ -1,0 +1,88 @@
+#!/usr/bin/env python
+#
+# Author:               Jane Curry
+# Date                  June 9th 2014
+# Description:          Unmanages a specific component of a specific device
+#                       $1 = device, $2 = component, $3 = component_type, $4 = on/off
+#                       eg.   ./unmanage_dev_component.py zen42.class.example.org / filesystems on
+# Updates:              
+#
+import sys
+import os
+import Globals
+import time
+from Products.ZenUtils.ZenScriptBase import ZenScriptBase
+from Products.ZenUtils.Utils import unused
+unused(Globals)
+from transaction import commit
+
+zenhome = os.environ['ZENHOME']
+logfileName = zenhome + '/log/unmanage_dev_comp.log'
+
+of = open(logfileName, 'a')
+localtime = time.asctime( time.localtime(time.time()) )
+of.write(localtime + "\n\n")
+
+# Need noopts=True or it barfs with the script options
+dmd = ZenScriptBase(connect=True, noopts=True).dmd
+
+print ' len(sys.argv) is %s \n' % (len(sys.argv))
+if len(sys.argv) < 5:
+    print '4 arguments required - device, component, component type, on | off'
+    sys.exit(1)
+hostname = sys.argv[1]
+compname = sys.argv[2]
+compType = sys.argv[3]
+manFlag = sys.argv[4]
+print 'dev %s comp %s compType %s flag %s \n' % (hostname, compname, compType, manFlag)
+if manFlag.lower() == 'on':
+    manFlag = True
+elif manFlag.lower() == 'off':
+    manFlag = False
+else:
+    print 'Monitor flag must be either on or off'
+    sys.exit(1)
+
+# properties for component types....
+# fixedDisk has type
+# vSphere has zVSphereEndpointHost
+# CiscoUCS has zCiscoUCSManagerPassword
+
+legalCompType = ['filesystems', 'rabbitmqvhost', 'ciscoucs', 'vsphere',]
+if compType.lower() not in legalCompType:
+    print 'comptype %s not in legal component types %s \n' % (compType, legalCompType)
+    sys.exit(1)
+
+found = False
+d=dmd.Devices.findDevice(hostname)
+if d:
+    # Check whether device has component with given name
+    if compType.lower() == 'filesystems':
+        for c in d.os.filesystems():
+            if c.titleOrId() == compname:
+                #c.monitor = manFlag
+                #of.write('Device %s has had component %s of type %s set to %s \n ' % (d.id , compname, compType, manFlag))
+                #print 'Device %s has had component %s of type %s set to %s \n ' % (d.id , compname, compType, manFlag)
+                #commit()
+                found = True
+                break
+    elif compType.lower() == 'rabbitmqvhost':
+        for c1 in d.rabbitmq_nodes():
+            for c in c1.rabbitmq_vhosts():
+                if c.titleOrId() == compname:
+                    found = True
+                    break
+            if found == True:
+                break
+
+if found:
+    c.monitor = manFlag
+    d.pushConfig()
+    of.write('Device %s has component %s of type %s set to %s \n ' % (d.id , compname, compType, manFlag))
+    print 'Device %s has component %s of type %s set to %s \n ' % (d.id , compname, compType, manFlag)
+    commit()
+
+else:
+    of.write('Device %s with component %s of type %s not found \n' % (hostname, compname, compType))
+    print 'Device %s with component %s of type %s not found \n' % (hostname, compname, compType)
+of.close()
